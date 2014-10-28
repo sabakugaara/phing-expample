@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project name="myapp" default="dist" basedir=".">
+    <property file="default.properties"/>
+    <!-- Gets hash of last Commit-->
+
+    <target name="clean" depends="prepare">
+        <ssh username="${ssh.username}"
+             password="${ssh.password}"
+             host="${ssh.host}"
+             display="true"
+             command="rm -r ${releases_dir}/${lastCommitHash}/" />
+
+        <ssh username="${ssh.username}"
+             password="${ssh.password}"
+             host="${ssh.host}"
+             display="true"
+             command="rm -r ${deploy_dir}/current" />
+    </target>
+
+    <target name="prepare">
+        <echo msg="Making directory ./build" />
+        <mkdir dir="./build" />
+        <echo msg="Making directory ./build/www" />
+        <mkdir dir="./build/www" />
+        <exec outputProperty="lastCommitHash"
+              command="git log --pretty=format:'%H' -n 1"
+              dir="${project.basedir}"/>
+        <echo msg="lastCommitHash : ${lastCommitHash}" />
+        <echo msg="create remote releases dir"/>
+        <ssh username="${ssh.username}"
+             password="${ssh.password}"
+             host="${ssh.host}"
+             display="true"
+             command="mkdir --mode=0777 -v ${releases_dir}/${lastCommitHash}" />
+        <!-- todo:无法设置上传目录的权限 总是为0700 -->
+        <ssh username="${ssh.username}"
+             password="${ssh.password}"
+             host="${ssh.host}"
+             display="true"
+             command="chmod 0777 ${releases_dir}/${lastCommitHash}" />
+    </target>
+
+    <!-- ============================================  -->
+    <!-- Target: prepare                               -->
+    <!-- ============================================  -->
+    <target name="phar" depends="prepare">
+        <pharpackage
+                destfile="./build/myapp.phar"
+                basedir="./src/">
+            <fileset dir="./src/">
+                <include name="**/**" />
+            </fileset>
+            <metadata>
+                <element name="version" value="1.0" />
+                <element name="authors">
+                    <element name="upyun">
+                        <element name="e-mail" value="support@upyun.com" />
+                    </element>
+                </element>
+            </metadata>
+        </pharpackage>
+    </target>
+
+    <target name="move_static_file" depends="prepare">
+        <copy todir="./build/www" >
+            <fileset dir="./www">
+                <include name="_src/**" />
+                <include name="img/**" />
+            </fileset>
+            <filelist dir="./www" files=".htaccess"/>
+            <filelist dir="./www" files="index.php"/>
+        </copy>
+    </target>
+    <target name="dist" depends="phar, move_static_file, clean">
+        <phingcall target="ftp_deploy">
+            <property name="ftp.dir" value="${releases_dir}/${lastCommitHash}"/>
+        </phingcall>
+        <!-- local server -->
+        <!-- <symlink link="${deploy_dir}/current" target="${releases_dir}/${lastCommitHash}" -->
+        <!-- remote server -->
+        <ssh username="${ssh.username}"
+             password="${ssh.password}"
+             host="${ssh.host}"
+             display="true"
+             command="ln -s ${releases_dir}/${lastCommitHash} ${deploy_dir}/current" />
+    </target>
+
+    <target name="ftp_deploy">
+        <echo message="Copying fileset to remote server"/>
+        <ftpdeploy host="${ftp.host}"
+                   password="${ftp.password}"
+                   username="${ftp.username}"
+                   dir="${ftp.dir}"
+                   mode="${ftp.mode}" dirmode="inherit">
+            <fileset dir="./build">
+                <include name="**/**"/>
+            </fileset>
+        </ftpdeploy>
+    </target>
+</project>
